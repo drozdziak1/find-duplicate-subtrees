@@ -1,6 +1,7 @@
 use std::{
+    borrow::Borrow,
     cell::RefCell,
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     rc::Rc,
 };
 
@@ -37,45 +38,43 @@ impl TreeNode {
 impl ToString for TreeNode {
     /// in-order representation with nesting
     fn to_string(&self) -> String {
-        let mut ret = "(".to_owned();
-        if let Some(l) = self.left.as_ref() {
-            ret.push_str(&l.borrow().to_string());
-        }
-        ret.push_str(&format!("{}", self.val));
-        if let Some(r) = self.right.as_ref() {
-            ret.push_str(&r.borrow().to_string());
-        }
-        ret + ")"
+	in_order_with_dups(Rc::new(RefCell::new(self.clone())), &mut None)
     }
 }
 
-pub fn find_duplicate_subtrees(root: Rc<RefCell<TreeNode>>) -> Vec<Rc<RefCell<TreeNode>>> {
-    let mut ret = Vec::new();
-    let mut stack = VecDeque::new();
-    let mut tree_string2count: HashMap<String, usize> = HashMap::new();
+/// Recursively list how many times a subtree repeats while building
+/// an in-order representation. Only in-order is built if
+/// `tree_string2count == None`.
+pub fn in_order_with_dups(
+    root: Rc<RefCell<TreeNode>>,
+    tree_string2count: &mut Option<HashMap<String, usize>>,
+) -> String {
+    let root = (*root).borrow();
 
-    stack.push_front(root);
+    let mut in_order = "(".to_owned();
+    if let Some(l) = root.left.clone() {
+        in_order.push_str(&in_order_with_dups(l, tree_string2count));
+    }
+    in_order.push_str(&format!("{}", root.val));
+    if let Some(r) = root.right.clone() {
+        in_order.push_str(&in_order_with_dups(r, tree_string2count));
+    }
+    in_order.push_str(")");
 
-    while let Some(node) = stack.pop_front() {
-        if let Some(l) = (*node).borrow().left.clone() {
-            stack.push_front(l);
-            continue;
-        }
-        let entry = tree_string2count
-            .entry(node.borrow().to_string())
-            .or_insert(0);
-        if *entry == 1 {
-            ret.push(node.clone());
-        }
+    if let Some(map) = tree_string2count {
+        let entry = map.entry(in_order.clone()).or_insert(0);
         *entry += 1;
-
-        if let Some(r) = (*node).borrow().right.clone() {
-            stack.push_front(r);
-	    continue;
-        }
     }
 
-    ret
+    in_order
+}
+
+/// Build a set of duplicate subtrees
+pub fn find_duplicate_subtrees(root: &TreeNode) -> HashSet<Rc<RefCell<TreeNode>>> {
+    let mut map = HashMap::new();
+    in_order_with_dups(Rc::new(RefCell::new(root.clone())), &mut Some(map));
+
+    Default::default()
 }
 
 #[cfg(test)]
@@ -85,25 +84,25 @@ mod tests {
     #[test]
     fn test_trivial_tree_not_duplicate() {
         let t = Rc::new(RefCell::new(TreeNode::new(42)));
-        assert!(find_duplicate_subtrees(t).is_empty());
+        assert!(in_order_with_dups(t).is_empty());
     }
 
     #[test]
     fn test_duplicate_leaves() {
         let mut t = TreeNode::new(2);
-	t.set_left(Some(TreeNode::new(15)));
-	t.right = t.left.clone();
+        t.set_left(Some(TreeNode::new(15)));
+        t.right = t.left.clone();
 
-	let expected = vec![t.left.clone().unwrap()];
+        let expected = vec![t.left.clone().unwrap()];
 
-	assert_eq!(find_duplicate_subtrees(Rc::new(RefCell::new(t))), expected);
+        assert_eq!(find_tree_duplicates(&t, ), expected);
     }
 
     #[test]
     fn test_to_string() {
         let mut t = TreeNode::new(2);
-	t.set_left(Some(TreeNode::new(1)));
-	t.set_right(Some(TreeNode::new(3)));
+        t.set_left(Some(TreeNode::new(1)));
+        t.set_right(Some(TreeNode::new(3)));
 
         assert_eq!(String::from("((1)2(3))"), t.to_string());
     }
