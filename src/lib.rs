@@ -55,6 +55,7 @@ pub fn in_order_with_dups<T: Clone + ToString>(
     let root_rcell = root.clone();
     let borrowed_root = root_rcell.borrow();
 
+    // Build the in-order representation
     let mut in_order = "(".to_owned();
     if let Some(l) = borrowed_root.left.clone() {
         in_order.push_str(&in_order_with_dups(l, tree_string2count, dups));
@@ -65,7 +66,9 @@ pub fn in_order_with_dups<T: Clone + ToString>(
     }
     in_order.push_str(")");
 
+    // Check for duplicates if the map is specified
     if let Some(map) = tree_string2count {
+	// The map relies on in-order representation uniqueness in string form 
         let entry = map.entry(in_order.clone()).or_insert(0);
         if let Some(dups) = dups {
             if *entry == 1 {
@@ -79,7 +82,7 @@ pub fn in_order_with_dups<T: Clone + ToString>(
 }
 
 /// Build a vec of duplicate subtrees
-pub fn find_tree_duplicates<T: Clone + ToString>(root: &TreeNode<T>) -> Vec<Rc<RefCell<TreeNode<T>>>> {
+pub fn find_duplicate_subtrees<T: Clone + ToString>(root: &TreeNode<T>) -> Vec<Rc<RefCell<TreeNode<T>>>> {
     let mut map = HashMap::new();
     let mut dups = Vec::new();
     in_order_with_dups(
@@ -98,7 +101,7 @@ mod tests {
     #[test]
     fn test_trivial_tree_not_duplicate() {
         let t = TreeNode::new(42);
-        assert_eq!(find_tree_duplicates(&t), vec![]);
+        assert_eq!(find_duplicate_subtrees(&t), vec![]);
     }
 
     #[test]
@@ -110,7 +113,7 @@ mod tests {
 
         let expected = vec![Rc::new(RefCell::new(leaf))];
 
-        assert_eq!(find_tree_duplicates(&t), expected);
+        assert_eq!(find_duplicate_subtrees(&t), expected);
     }
 
     /// Make sure we got Option hashing right and don't collide on subtrees with left-right
@@ -132,7 +135,7 @@ mod tests {
 
         let expected = vec![Rc::new(RefCell::new(leaf))];
 
-        assert_eq!(find_tree_duplicates(&root), expected);
+        assert_eq!(find_duplicate_subtrees(&root), expected);
     }
 
     ///     42
@@ -159,7 +162,7 @@ mod tests {
             Rc::new(RefCell::new(l_chld)),
         ];
 
-        assert_eq!(find_tree_duplicates(&root), expected);
+        assert_eq!(find_duplicate_subtrees(&root), expected);
     }
 
     #[test]
