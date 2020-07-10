@@ -1,22 +1,21 @@
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet},
-    hash::{Hash, Hasher},
+    collections::HashMap,
     rc::Rc,
 };
 
 /// Definition for a binary tree node.
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
-pub struct TreeNode {
-    pub val: i32,
-    pub left: Option<Rc<RefCell<TreeNode>>>,
-    pub right: Option<Rc<RefCell<TreeNode>>>,
+pub struct TreeNode<T> {
+    pub val: T,
+    pub left: Option<Rc<RefCell<TreeNode<T>>>>,
+    pub right: Option<Rc<RefCell<TreeNode<T>>>>,
 }
 
-impl TreeNode {
+impl<T: Default> TreeNode<T> {
     /// Create a leaf node with `val`
     #[inline]
-    pub fn new(val: i32) -> Self {
+    pub fn new(val: T) -> Self {
         Self {
             val,
             ..Default::default()
@@ -25,63 +24,54 @@ impl TreeNode {
 
     /// QoL left node setter
     #[inline]
-    pub fn set_left(&mut self, new_left: Option<TreeNode>) {
+    pub fn set_left(&mut self, new_left: Option<TreeNode<T>>) {
         self.left = new_left.map(|v| Rc::new(RefCell::new(v)));
     }
 
     /// QoL right node setter
     #[inline]
-    pub fn set_right(&mut self, new_right: Option<TreeNode>) {
+    pub fn set_right(&mut self, new_right: Option<TreeNode<T>>) {
         self.right = new_right.map(|v| Rc::new(RefCell::new(v)));
     }
 }
 
-impl ToString for TreeNode {
+impl<T: Clone + ToString> ToString for TreeNode<T> {
     /// in-order representation with nesting
     fn to_string(&self) -> String {
-        in_order_with_dups(Rc::new(RefCell::new(self.clone())), &mut None)
+        in_order_with_dups(Rc::new(RefCell::new(self.clone())), &mut None, &mut None)
     }
 }
 
-impl Hash for TreeNode {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.val.hash(state);
-
-        if let Some(ref l) = self.left {
-            l.borrow().hash(state);
-        } else {
-            Option::<&TreeNode>::None.hash(state);
-        }
-        if let Some(ref r) = self.right {
-            r.borrow().hash(state);
-        } else {
-            Option::<&TreeNode>::None.hash(state);
-        }
-    }
-}
-
-/// Recursively list how many times a subtree repeats while building
+/// Recursively list how many times subtrees repeat while building
 /// an in-order representation. Only in-order is built if
-/// `tree_string2count == None`. This function relies on cheap clones
+/// `tree_string2count` is `None`. An explicit list of duplicates can be
+/// saved to `dups` if specified. This function relies on cheap clones
 /// of the tree.
-pub fn in_order_with_dups(
-    root: Rc<RefCell<TreeNode>>,
-    tree2count: &mut Option<&mut HashMap<TreeNode, usize>>,
+pub fn in_order_with_dups<T: Clone + ToString>(
+    root: Rc<RefCell<TreeNode<T>>>,
+    tree_string2count: &mut Option<&mut HashMap<String, usize>>,
+    dups: &mut Option<&mut Vec<Rc<RefCell<TreeNode<T>>>>>,
 ) -> String {
-    let root = (*root).borrow();
+    let root_rcell = root.clone();
+    let borrowed_root = root_rcell.borrow();
 
     let mut in_order = "(".to_owned();
-    if let Some(l) = root.left.clone() {
-        in_order.push_str(&in_order_with_dups(l, tree2count));
+    if let Some(l) = borrowed_root.left.clone() {
+        in_order.push_str(&in_order_with_dups(l, tree_string2count, dups));
     }
-    in_order.push_str(&format!("{}", root.val));
-    if let Some(r) = root.right.clone() {
-        in_order.push_str(&in_order_with_dups(r, tree2count));
+    in_order.push_str(&format!("{}", borrowed_root.val.to_string()));
+    if let Some(r) = borrowed_root.right.clone() {
+        in_order.push_str(&in_order_with_dups(r, tree_string2count, dups));
     }
     in_order.push_str(")");
 
-    if let Some(map) = tree2count {
-        let entry = map.entry(root.clone()).or_insert(0);
+    if let Some(map) = tree_string2count {
+        let entry = map.entry(in_order.clone()).or_insert(0);
+        if let Some(dups) = dups {
+            if *entry == 1 {
+                dups.push(root);
+            }
+        }
         *entry += 1;
     }
 
@@ -89,13 +79,16 @@ pub fn in_order_with_dups(
 }
 
 /// Build a vec of duplicate subtrees
-pub fn find_tree_duplicates(root: &TreeNode) -> HashSet<TreeNode> {
+pub fn find_tree_duplicates<T: Clone + ToString>(root: &TreeNode<T>) -> Vec<Rc<RefCell<TreeNode<T>>>> {
     let mut map = HashMap::new();
-    in_order_with_dups(Rc::new(RefCell::new(root.clone())), &mut Some(&mut map));
+    let mut dups = Vec::new();
+    in_order_with_dups(
+        Rc::new(RefCell::new(root.clone())),
+        &mut Some(&mut map),
+        &mut Some(&mut dups),
+    );
 
-    map.drain()
-        .filter_map(|(k, v)| if v > 1 { Some(k) } else { None })
-        .collect()
+    dups
 }
 
 #[cfg(test)]
@@ -105,19 +98,17 @@ mod tests {
     #[test]
     fn test_trivial_tree_not_duplicate() {
         let t = TreeNode::new(42);
-        assert_eq!(find_tree_duplicates(&t), HashSet::new());
+        assert_eq!(find_tree_duplicates(&t), vec![]);
     }
 
     #[test]
     fn test_duplicate_leaves() {
         let mut t = TreeNode::new(2);
-	let leaf = TreeNode::new(15);
+        let leaf = TreeNode::new(15);
         t.set_left(Some(leaf.clone()));
-	t.set_right(Some(leaf.clone()));
+        t.set_right(Some(leaf.clone()));
 
-        let mut expected = HashSet::new();
-
-        expected.insert(leaf);
+        let expected = vec![Rc::new(RefCell::new(leaf))];
 
         assert_eq!(find_tree_duplicates(&t), expected);
     }
@@ -139,8 +130,8 @@ mod tests {
         root.set_left(Some(l_chld.clone()));
         root.set_right(Some(r_chld.clone()));
 
-        let mut expected = HashSet::new();
-        expected.insert(leaf);
+        let expected = vec![Rc::new(RefCell::new(leaf))];
+
         assert_eq!(find_tree_duplicates(&root), expected);
     }
 
@@ -162,16 +153,13 @@ mod tests {
         root.set_left(Some(l_chld.clone()));
         root.set_right(Some(r_chld.clone()));
 
-        let mut expected = HashSet::new();
+        let expected = vec![
+            Rc::new(RefCell::new(l_leaf)),
+            Rc::new(RefCell::new(r_leaf)),
+            Rc::new(RefCell::new(l_chld)),
+        ];
 
-        expected.insert(l_chld);
-        expected.insert(l_leaf);
-        expected.insert(r_leaf);
-
-        assert_eq!(
-            find_tree_duplicates(&root),
-	    expected
-        );
+        assert_eq!(find_tree_duplicates(&root), expected);
     }
 
     #[test]
